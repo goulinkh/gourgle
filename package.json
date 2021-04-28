@@ -1,0 +1,14 @@
+{
+  "name": "google",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:goulinkh/google.git",
+  "license": "MIT",
+  "dependencies": {
+    "jsdom": "^16.5.3",
+    "node-fetch": "^2.6.1"
+  },
+  "devDependencies": {
+    "@types/node-fetch": "^2.5.10"
+  }
+}
