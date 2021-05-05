@@ -1,9 +1,9 @@
 const { writeFile } = require("fs/promises");
 const { JSDOM } = require("jsdom");
 const fetch = require("node-fetch");
+const randomUseragent = require("random-useragent");
 
-const USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.85 Safari/537.36";
+const USER_AGENT = randomUseragent.getRandom();
 /**
  *
  * @param {HTMLElement} rootEl
@@ -41,12 +41,7 @@ function getFeaturedSnippet(rootEl) {
     parseParagraph(featuredSnippetEl, referenceLink);
 
   if (referenceLink) {
-    url = referenceLink.href;
-    if (url.match(/^\/url\?q=/)) {
-      referenceLink = new URLSearchParams(url).get("/url?q");
-    } else {
-      referenceLink = url;
-    }
+    referenceLink = getUrl(referenceLink.href);
   }
 
   return {
@@ -104,7 +99,7 @@ function parseTable(featuredSnippet) {
         keys.map((e, i) => (row[e] = dataCells[i].textContent));
         return row;
       });
-    return { type: "table", data };
+    return { type: "table", ...data };
   }
   return null;
 }
@@ -130,33 +125,98 @@ function parseParagraph(featuredSnippetEl, referenceLinkEl) {
   return data;
 }
 
-async function start() {
-  // bulleted list
-  // query = "Best rated sub 2020";
-  // table
-  // query = "plus grandes villes de france";
-  // ordered list
-  // query = "nigella lawson chocolate cake recipe";
-  // paragraph
-  query = "seo links";
+/**
+ *
+ * @param {HTMLElement} document
+ */
+function getAllLinks(document) {
+  return uniqBy(
+    Array.from(document.querySelectorAll("div"))
+      .filter((e) => {
+        const links = Array.from(e.querySelectorAll("a"));
+        if (links.length !== 1) return false;
+        if (!links[0].textContent.includes(" › ")) return false;
+        return (
+          Array.from(e.querySelectorAll("div,span"))
+            .map((e) => getTextContent(e))
+            .filter((e) => !!e).length > 1
+        );
+      })
+      .map((e) => {
+        // return e.textContent;
+        const aEl = e.querySelector("a");
+        const aTexts = Array.from(aEl.querySelectorAll("*")).map(
+          (e) => e.textContent
+        );
+        const title = aTexts[1];
+        const path = aTexts[2];
+        const texts = Array.from(e.querySelectorAll("div,span"))
+          .map((e) => getTextContent(e))
+          .filter((e) => !!e && !e.includes(title) && !e.includes(path))
+          .sort((e1, e2) => e2.length - e1.length);
+        const description = texts?.[0]?.length > 13 ? texts[0] : null;
+        return {
+          title,
+          path,
+          description,
+          link: getUrl(aEl.href),
+        };
+      }),
+    (e) => e.link
+  );
+}
 
-  language = "en";
-  const url = `https://www.google.com/search?q=${query}&hl=${language}`;
+/**
+ * get element’s text content without its child nodes
+ * @param {HTMLElement} e
+ * @returns {string}
+ */
+function getTextContent(e) {
+  return [].reduce.call(
+    e.childNodes,
+    function (a, b) {
+      return a + (b.nodeType === 3 ? b.textContent : "");
+    },
+    ""
+  );
+}
+function uniqBy(a, key) {
+  var seen = {};
+  return a.filter(function (item) {
+    var k = key(item);
+    return seen.hasOwnProperty(k) ? false : (seen[k] = true);
+  });
+}
+function getUrl(str) {
+  if (str.match(/^\/url\?q=/)) {
+    return new URLSearchParams(str).get("/url?q");
+  } else {
+    return str;
+  }
+}
+
+async function search(query, language, page = 1) {
+  const url = `https://www.google.com/search?q=${query}&hl=${language}&start=${
+    page - 1
+  }0`;
   const html = await (
-    await fetch(url, { header: { "User-Agent": USER_AGENT } })
+    await fetch(url, {
+      header: {
+        "User-Agent": USER_AGENT,
+      },
+    })
   ).text();
-  const dom = new JSDOM(html);
-  const document = dom.window.document;
+  const {
+    window: { document },
+  } = new JSDOM(html);
   const rootEl = document.querySelector("#main");
   if (!rootEl) throw new Error("Main element not found");
   const featuredSnippet = getFeaturedSnippet(rootEl);
-  console.log(`featuredSnippet`, featuredSnippet);
-
-  await writeFile("./test.html", html, { encoding: "utf-8" });
-  // const searchSectionEls = Array.from(document.querySelectorAll("#rso > *"));
-  // searchSectionEls.forEach((el) => {
-  //   el.querySelector()
-  // });
+  const links = getAllLinks(document);
+  return { featuredSnippet, links };
 }
 
-start();
+module.exports = {
+  search,
+  supportedLanguages: require("./languages.json"),
+};
