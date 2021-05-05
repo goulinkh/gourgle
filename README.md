@@ -1,7 +1,5 @@
 # Gourgle
 
----
-
 Gourgle is an API & A CLI for Google search by scraping google.com website.
 
 ## Features
